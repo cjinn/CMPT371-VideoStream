@@ -38,7 +38,7 @@ while True:
     data = data[msg_size:]
 
     # Extract frame
-    frame = pickle.loads(frame_data)
+    frame = pickle.loads(frame_data) # Assuming data is okay
 
     # Display
     cv2.imshow('frame', frame)
