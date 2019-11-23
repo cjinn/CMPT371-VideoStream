@@ -23,7 +23,7 @@ class Client():
         self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.clientSocket.connect((host, port)) # Assumes server is up and broadcasting
 
-    def beginDisplaying():
+    def beginDisplaying(self):
         data = ""
         payloadSize = struct.calcsize("H")
 
@@ -70,7 +70,7 @@ class Server():
         self.capture = cv2.VideoCapture(streamVideoLocation)
     
     def handlerAccept(self):
-        connection, address = self.serverSocket.accept()
+        connection = self.serverSocket.accept()
         print("New client!")
         self.clients.append(connection)
         self.client = connection
