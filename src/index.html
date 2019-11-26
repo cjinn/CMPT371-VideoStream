@@ -5,12 +5,24 @@
 <body>
     <div>
         <h1>Video Stream</h1>
-        <video width="320" height="240" controls>
+        <video id="myVideo" width="320" height="240" controls>
             <source= src="" type="video/mp4"/>
             Your browser does not support video tag
         </video>
-        <button>Play</button>
-        <button>Pause</button>
+        <button onClick="playVideo()" type="button">Play</button>
+        <button onClick="pauseVideo()" type="button">Pause</button>
     </div>
+    
+    <script>
+      var vid = document.getElementById("myVideo");
+
+      function playVid() {
+      vid.play();
+      }
+
+      function pauseVid() {
+      vid.pause();
+      }
+    </script>
 </body>
 </html>
