@@ -1,13 +1,26 @@
 # CMPT371-VideoStream
 Server-client communications for video streaming
 
+# Requirements
+## Hardware Required
+- Windows computer
+- Camera plugged into the computer
+
 ## Software Required
 - Python 3.XX
 - pip
 
-#### Running Instructions
-Run: `pip install -r requirements.txt` where this README.md exists
+# Instructions
+1. Run: `pip install -r requirements.txt` where this README.md exists
+2. Navigate to '/src'
+3. Run the python command "python Webserver.py"
+4. On your web browser, navigate to "[http://localhost:8081/](http://localhost:8081/)"
 
-## Sources
-- https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html
-- https://pypi.org/project/python-ffmpeg-video-streaming/
+# Sources
+- [OpenCV](https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html)
+- [TCP Communication](https://wiki.python.org/moin/TcpCommunication)
+- [HTTP Server](https://docs.python.org/3/library/http.server.html)
+- [SocketServer](https://docs.python.org/2/library/socketserver.html)
+
+# Known Bugs
+- Shutting down server does not work properly
