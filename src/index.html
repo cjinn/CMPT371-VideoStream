@@ -1,19 +1,27 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"/>
+
+    <link rel="stylesheet" href="main.css"/>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous"/>
     <title>Video Streaming Example</title>
 </head>
 <body>
     <div>
-        <h1>Video Stream</h1>
-        <video id="myVideo" width="320" height="240" controls>
-            <source= src="" type="video/mp4"/>
-            Your browser does not support video tag
-        </video>
-        <img src="video.stream"/>
-
-        <!-- <img src="{{ url_for('video_feed') }}"> -->
-        <button onClick="playVideo()" type="button">Play</button>
-        <button onClick="pauseVideo()" type="button">Pause</button>
+        <div>
+            <h1>Video Stream</h1>
+        </div>
+        <div>
+            <img src="video.stream" alt="Video Stream"/>
+        </div>
+        <div>
+            <button onClick="playVideo()" type="button">Play</button>
+            <button onClick="pauseVideo()" type="button">Pause</button>
+        </div>
+        
     </div>
     
     <script>

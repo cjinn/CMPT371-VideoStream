@@ -15,24 +15,26 @@ class Camera():
         global outputFrame, lock
 
         while True:
-            ret, frame = self.capture.read()
+            try:
+                ret, frame = self.capture.read()
 
-            with lock:
-                outputFrame = frame.copy()
+                with lock:
+                    outputFrame = frame.copy()
 
-            cv2.imshow("frame", frame)
-            cv2.waitKey(1)
+                cv2.imshow("frame", frame)
+                cv2.waitKey(1)
+                    
+            except KeyboardInterrupt:
+                self.close()
+                return
 
     def streamVideo(self):
-        # grab global references to the output frame and lock variables
         global outputFrame, lock
     
-        # loop over frames from the output stream
         while True:
             # wait until the lock is acquired
             with lock:
-                # check if the output frame is available, otherwise skip
-                # the iteration of the loop
+                # check if the output frame is available, otherwise skip the iteration of the loop
                 if outputFrame is None:
                     continue
     
@@ -46,7 +48,7 @@ class Camera():
             byteStr = b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
             return byteStr
     
-            # yield the output frame in the byte format
-            # yield(byteStr)
-
+    def close(self):
+        self.capture.release()
+        cv2.destroyAllWindows()
             
