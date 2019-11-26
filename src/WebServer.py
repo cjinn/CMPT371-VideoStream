@@ -28,7 +28,8 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-type', mimeType)
                 self.end_headers()
-                self.wfile.write(camera.streamVideo())
+                self.stream()
+                
                 sendReply = False
             elif sendReply == True:
                 f = open(curdir + sep + self.path)
@@ -43,6 +44,10 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
         except IOError:
             self.send_error(404, 'File Not Found: %s' % self.path)
 
+    def stream(self):
+        while True:
+            self.wfile.write(camera.streamVideo())
+
     def getMimeType(self):
         mimeType = ''
 
@@ -52,7 +57,7 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
             mimeType = 'image/jpg'
         elif self.path.endswith(".js"):
             mimeType = 'application/javascript'
-        elif self.path.endswith(".js"):
+        elif self.path.endswith(".css"):
             mimeType = 'text/css'
         elif self.path.endswith(".stream"):
             # mimeType = 'image/jpg'
