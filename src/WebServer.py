@@ -27,6 +27,9 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
             elif self.path.endswith(".js"):
                 mimeType = 'text/css'
                 sendReply = True
+            # elif self.path.endswith(".stream"):
+            #     # To-do: Implement video streaming here
+            #     mimeType=""
 
             if sendReply == True:
                 f = open(curdir + sep + self.path)
@@ -49,7 +52,7 @@ class WebServer():
         self.handler = WebServerHandler
 
         if serverType == "TCP":
-            self.server = socketserver.TCPServer((self.host, self.port), self.handler) # To-do: UDP
+            self.server = socketserver.TCPServer((self.host, self.port), self.handler)
         # elif serverType == "UDP"
         #     self.server = socketserver.UDPServer((self.host, self.port), self.handler) # To-do: UDP
     
