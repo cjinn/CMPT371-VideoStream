@@ -32,7 +32,7 @@ class WebServerHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header('Content-type', mimeType)
                 self.end_headers()
                 self.stream()
-            elif sendReply == True:
+            elif sendReply:
                 f = open(curdir + sep + self.path)
                 print(curdir + sep + self.path)
                 self.send_response(200)
