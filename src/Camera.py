@@ -44,9 +44,9 @@ class Camera():
                     continue
 
             byteStr = b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + bytearray(encodedImage) + b'\r\n'
-            # return byteStr
+            return byteStr
     
             # yield the output frame in the byte format
-            yield(byteStr)
+            # yield(byteStr)
 
             
