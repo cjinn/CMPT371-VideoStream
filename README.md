@@ -22,6 +22,7 @@ Server-client communications for video streaming
 - [UDP Communication in Python](https://wiki.python.org/moin/UdpCommunication)
 - [HTTP Server](https://docs.python.org/3/library/http.server.html)
 - [SocketServer](https://docs.python.org/2/library/socketserver.html)
+- [UDP Packets Source Code](https://github.com/jeremyfix/udp_video_streaming)
 
 # Known Bugs
 - Shutting down server does not work properly
