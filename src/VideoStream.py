@@ -13,8 +13,8 @@ STREAM_CAMERA = 0
 SOCKET_TYPE_TCP="TCP"
 SOCKET_TYPE_UDP="UDP"
 MAX_NUM_CLIENTS = 1 # only one client
-MESSAGE_BUFFER_SIZE = 4096 # Massive buffer to store image frames
-SMALL_RESOLUTION = (50, 20) # Small resolution to not overwhelm the buffer
+MESSAGE_BUFFER_SIZE = 20000 # Massive buffer to store image frames
+SMALL_RESOLUTION = (100, 50) # Small resolution to not overwhelm the buffer
 
 # Client sending video frames to a server
 class VideoClient():
@@ -36,8 +36,7 @@ class VideoClient():
         time.sleep(2) # Warm up the camera
 
     def streamUDP(self):
-        ret, frame = self.capture.read()
-        frame = cv2.resize(frame, SMALL_RESOLUTION)
+        frame = self.grabEncodedFrame()
 
         # Serialise frame before sending. Not intended for production
         data = pickle.dumps(frame) 
@@ -45,8 +44,7 @@ class VideoClient():
         self.clientSocket.sendto(msgSize + data, (self.host, self.port))
 
     def streamTCP(self):
-        ret, frame = self.capture.read()
-        frame = cv2.resize(frame, SMALL_RESOLUTION)
+        frame = self.grabEncodedFrame()
 
         # Serialise frame before sending. Not intended for production
         data = pickle.dumps(frame) 
@@ -60,6 +58,16 @@ class VideoClient():
                 self.streamTCP()
             elif self.socketType == SOCKET_TYPE_UDP:
                 self.streamUDP()
+
+    def grabEncodedFrame(self):
+        ret, frame = self.capture.read()
+        frame = cv2.resize(frame, SMALL_RESOLUTION)
+
+        # Encoding frame to make it smaller
+        encodeParams = [20]
+        result, encodedFrame = cv2.imencode('.jpg', frame, encodeParams)
+
+        return encodedFrame
 
 class VideoServer():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP):
@@ -97,6 +105,7 @@ class VideoServer():
             data = data[msgSize:]
 
             frame = pickle.loads(frameData)
+            frame = cv2.imdecode(frame, 1)
             cv2.imshow('frame',frame)
             cv2.waitKey(1)
 
@@ -120,6 +129,7 @@ class VideoServer():
             data = data[msgSize:]
 
             frame = pickle.loads(frameData)
+            frame = cv2.imdecode(frame, 1)
             cv2.imshow('frame',frame)
             cv2.waitKey(1)    
     
@@ -130,7 +140,7 @@ class VideoServer():
                 self.runTCP()
             elif self.socketType == SOCKET_TYPE_UDP:
                 self.runUDP()
-        except KeyboardInterrupt:
+        finally:
             self.close()
     
     def close(self):
