@@ -17,10 +17,6 @@ SOCKET_TYPE_UDP="UDP"
 MAX_NUM_CLIENTS = 1 # only one client
 MESSAGE_BUFFER_SIZE = 20000 # Massive buffer to store image frames
 
-SMALL_HEIGHT = 100
-SMALL_WIDTH = 50
-SMALL_RESOLUTION = (SMALL_HEIGHT, SMALL_WIDTH) # Small resolution to not overwhelm the buffer
-
 # Client sending video frames to a server
 class VideoClient():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP, videoPath=STREAM_CAMERA):
@@ -35,7 +31,6 @@ class VideoClient():
             self.clientSocket.connect((host, port))
         elif socketType == SOCKET_TYPE_UDP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-            self.UDPHandler = udp.UDPPacketHandler()
 
         print("Starting up camera")
         self.capture = cv2.VideoCapture(videoPath)
@@ -45,10 +40,12 @@ class VideoClient():
         frameIndex = 0
         t1 = time.time()
         t0 = t1
+        handler = udp.UDPPacketHandler
 
         while True:
-            frame = self.grabEncodedFrame()
-            packets = self.UDPHandler.breakupPayload(frameIndex, frame, udp.MAX_PACKET_SIZE)
+            frame = self.grabFrame()
+            frameBytes = self.encodeFrame(frame, 80)
+            packets = handler.breakupPayload(msgIndex=frameIndex, payload=frameBytes, maxPacketSize=udp.MAX_PACKET_SIZE)
 
             for packet in packets:
                 self.clientSocket.sendto(packet.encode(), (self.host, self.port))
@@ -62,8 +59,11 @@ class VideoClient():
 
     def streamTCP(self):
         frameIndex = 0
+        t1 = time.time()
+        t0 = t1
+
         while True:
-            frame = self.grabEncodedFrame()
+            frame = self.grabFrame()
 
             # Serialise frame before sending. Not intended for production
             data = pickle.dumps(frame) 
@@ -85,13 +85,14 @@ class VideoClient():
             print("Beginning streaming UDP")
             self.streamUDP()
 
-    def grabEncodedFrame(self):
+    def grabFrame(self):
         ret, frame = self.capture.read()
-        frame = cv2.resize(frame, SMALL_RESOLUTION)
-
-        print(frame.shape)
-
         return frame
+
+    def encodeFrame(self, frame, jpegQuality):
+        encodeParams = [int(cv2.IMWRITE_JPEG_QUALITY), jpegQuality]
+        result, buffer = cv2.imencode('.jpg', frame, encodeParams)
+        return buffer.tobytes()
 
 class VideoServer():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP):
@@ -150,12 +151,7 @@ class VideoServer():
             frameBytes = self.UDPHandler.reassemblePackets(packet)
 
             if frameBytes != None:
-                print(type(frameBytes))
-                print(len(frameBytes))
-                frame = np.frombuffer(frameBytes, np.int8)
-                frame.reshape(SMALL_HEIGHT, SMALL_WIDTH, 3)
-
-                cv2.namedWindow("Video Stream")
+                frame = self.decodeFrame(frameBytes)
                 cv2.imshow('frame',frame)
                 cv2.waitKey(1)               
     
@@ -169,6 +165,10 @@ class VideoServer():
                 self.runUDP()
         finally:
             self.close()
+    
+    def decodeFrame(self, frameBuffer):
+        frameArray = np.frombuffer(frameBuffer, dtype=np.dtype('uint8'))
+        return cv2.imdecode(frameArray, flags=cv2.IMREAD_UNCHANGED)
     
     def close(self):
         self.serverSocket.close()
