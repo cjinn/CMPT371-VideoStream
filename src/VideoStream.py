@@ -91,8 +91,8 @@ class VideoClient():
 
     def encodeFrame(self, frame, jpegQuality):
         encodeParams = [int(cv2.IMWRITE_JPEG_QUALITY), jpegQuality]
-        result, buffer = cv2.imencode('.jpg', frame, encodeParams)
-        return buffer.tobytes()
+        result, buf = cv2.imencode('.jpg', frame, encodeParams)
+        return buf.tobytes()
 
 class VideoServer():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP):
