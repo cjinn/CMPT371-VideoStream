@@ -18,7 +18,8 @@ Server-client communications for video streaming
 
 # Sources
 - [OpenCV](https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_gui/py_video_display/py_video_display.html)
-- [TCP Communication](https://wiki.python.org/moin/TcpCommunication)
+- [TCP Communication in Python](https://wiki.python.org/moin/TcpCommunication)
+- [UDP Communication in Python](https://wiki.python.org/moin/UdpCommunication)
 - [HTTP Server](https://docs.python.org/3/library/http.server.html)
 - [SocketServer](https://docs.python.org/2/library/socketserver.html)
 
