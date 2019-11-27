@@ -6,6 +6,7 @@ import pickle
 import struct
 import time
 import math
+import UDPPackets as udp
 
 # Constants
 DEFAULT_HOST="localhost"
@@ -15,81 +16,10 @@ SOCKET_TYPE_TCP="TCP"
 SOCKET_TYPE_UDP="UDP"
 MAX_NUM_CLIENTS = 1 # only one client
 MESSAGE_BUFFER_SIZE = 20000 # Massive buffer to store image frames
-SMALL_RESOLUTION = (100, 50) # Small resolution to not overwhelm the buffer
 
-# UDP Packet object to assist multi-datagrams
-class UDPPacket:
-    headerSize = 20 # bytes
-
-    def __init__(self, msgIndex: int, packetIndex: int, numPackets: int, payload: memoryview):
-        self.msgIndex       = msgIndex 
-        self.packetIndex    = packetIndex
-        self.numPackets     = numPackets
-        self.payload = payload
-        self.header = self.msgIndex.to_bytes  (4, 'big')+\
-                      self.packetIndex.to_bytes  (4, 'big')+\
-                      self.numPackets.to_bytes (4, 'big')+\
-                      len(self.payload).to_bytes(8, 'big')
-    
-    # Decode packet structure from message
-    def decode(self, msg: bytes):
-        msgIndex        = int.from_bytes(msg[:4],    'big')
-        packetIndex     = int.from_bytes(msg[4:8],   'big')
-        numPackets      = int.from_bytes(msg[8:12],   'big')
-        payloadSize     = int.from_bytes(msg[12:20], 'big')
-
-        packet = UDPPacket(msgIndex, packetIndex, numPackets, msg[16:16 + payloadSize])
-        return packet
-    
-    # Encode a packet
-    def encode(self):
-        return self.header + self.payload
-
-# UDP Packet Handler
-class UDPPacketHandler:
-    def __init__(self):
-        self.currentMsgIndex = None
-        self.packets = []
-        self.numWaitingPackets = None
-    
-    # Reassemble packets into an object
-    def reassemblePackets(self, packet: UDPPacket):
-        if (self.currentMsgIndex is None or packet.msgIndex > self.currentMsgIndex):
-            # First packet, or we drop all packets in favour of recent packets
-            self.currentMsgIndex = packet.msgIndex
-            self.packets = [b'']*packet.numPackets
-            self.numWaitingPackets = packet.numPackets
-        
-        # Drop frame because too old
-        if packet.msgIndex < self.currentMsgIndex:
-            return
-
-        self.packets[packet.packetIndex] = packet.payload
-        self.numWaitingPackets -= 1
-
-        # If all packets has been collected, build full message
-        if self.numWaitingPackets == 0:
-            return b''.join(self.packets)
-
-    # Break up an object into a list of packets
-    def breakupPayload(self, msgIndex: int, payload: bytes, maxPacketSize: int):
-        payloadChunkSize = maxPacketSize - UDPPacket.headerSize
-        numPackets = math.ceil(len(payload)/payloadChunkSize)
-        packets = []
-
-        payloadView = memoryview(payload)
-
-        # Stuff data into a list of packets
-        for iterator in range(numPackets - 1):
-            startByte = iterator*payloadChunkSize
-            endByte = (iterator + 1)*payloadChunkSize
-            packets.append(UDPPacket(msgIndex, iterator, numPackets, payloadView[startByte:endByte]))
-        
-        # Process last packet
-        startByte = (numPackets - 1)*payloadChunkSize
-        packets.append(UDPPacket(msgIndex, numPackets - 1, numPackets, payloadView[startByte:]))
-
-        return packets
+SMALL_HEIGHT = 100
+SMALL_WIDTH = 50
+SMALL_RESOLUTION = (SMALL_HEIGHT, SMALL_WIDTH) # Small resolution to not overwhelm the buffer
 
 # Client sending video frames to a server
 class VideoClient():
@@ -105,21 +35,33 @@ class VideoClient():
             self.clientSocket.connect((host, port))
         elif socketType == SOCKET_TYPE_UDP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+            self.UDPHandler = udp.UDPPacketHandler()
 
         print("Starting up camera")
         self.capture = cv2.VideoCapture(videoPath)
         time.sleep(2) # Warm up the camera
 
     def streamUDP(self):
+        frameIndex = 0
+        t1 = time.time()
+        t0 = t1
+
         while True:
             frame = self.grabEncodedFrame()
+            packets = self.UDPHandler.breakupPayload(frameIndex, frame, udp.MAX_PACKET_SIZE)
 
-            # Serialise frame before sending. Not intended for production
-            data = pickle.dumps(frame) 
-            msgSize = struct.pack("L", len(data))
-            self.clientSocket.sendto(msgSize + data, (self.host, self.port))
+            for packet in packets:
+                self.clientSocket.sendto(packet.encode(), (self.host, self.port))
+            frameIndex += 1
+
+            if frameIndex % 30 == 0:
+                t1 = time.time()
+                frameRate = str(30/(t1 - t0))
+                t0 = t1
+                print("Stream FPS: " + frameRate)
 
     def streamTCP(self):
+        frameIndex = 0
         while True:
             frame = self.grabEncodedFrame()
 
@@ -127,6 +69,13 @@ class VideoClient():
             data = pickle.dumps(frame) 
             msgSize = struct.pack("L", len(data))
             self.clientSocket.sendall(msgSize + data)
+            frameIndex += 1
+
+            if frameIndex % 30 == 0:
+                t1 = time.time()
+                frameRate = str(30/(t1 - t0))
+                t0 = t1
+                print("Stream FPS: " + frameRate)                
 
     def beginStreaming(self):
         if self.socketType == SOCKET_TYPE_TCP:
@@ -140,11 +89,9 @@ class VideoClient():
         ret, frame = self.capture.read()
         frame = cv2.resize(frame, SMALL_RESOLUTION)
 
-        # Encoding frame to make it smaller
-        encodeParams = [20]
-        result, encodedFrame = cv2.imencode('.jpg', frame, encodeParams)
+        print(frame.shape)
 
-        return encodedFrame
+        return frame
 
 class VideoServer():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP):
@@ -157,6 +104,7 @@ class VideoServer():
             self.serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         elif socketType == SOCKET_TYPE_UDP:
             self.serverSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
+            self.UDPHandler = udp.UDPPacketHandler()
         self.serverSocket.bind((host, port))
 
     def runTCP(self):
@@ -182,34 +130,34 @@ class VideoServer():
             data = data[msgSize:]
 
             frame = pickle.loads(frameData)
-            frame = cv2.imdecode(frame, 1)
             cv2.imshow('frame',frame)
             cv2.waitKey(1)
 
 
     def runUDP(self):
         data = b''
-        payloadSize = struct.calcsize("L")
         serverSock = self.serverSocket
+        time.sleep(2)
 
         while True:
-            while len(data) < payloadSize:
-                data += serverSock.recv(MESSAGE_BUFFER_SIZE)
-            packedMsgSize = data[:payloadSize]
-            data = data[payloadSize:]
-            msgSize = struct.unpack("L", packedMsgSize)[0]
+            # Grab as much data from buffer
+            data += serverSock.recv(MESSAGE_BUFFER_SIZE)
+            packet = udp.UDPPacket.decode(data)
+            packetSize = packet.headerSize + len(packet.payload)
+            data = data[packetSize:]
 
-            # Retrieve data based on message size
-            while len(data) < msgSize:
-                data += serverSock.recv(MESSAGE_BUFFER_SIZE)
-            frameData = data[:msgSize]
-            data = data[msgSize:]
+            # Display frame when fully reassembled
+            frameBytes = self.UDPHandler.reassemblePackets(packet)
 
-            frame = pickle.loads(frameData)
-            frame = cv2.imdecode(frame, 1)
-            cv2.namedWindow("Video Stream")
-            cv2.imshow('frame',frame)
-            cv2.waitKey(1)    
+            if frameBytes != None:
+                print(type(frameBytes))
+                print(len(frameBytes))
+                frame = np.frombuffer(frameBytes, np.int8)
+                frame.reshape(SMALL_HEIGHT, SMALL_WIDTH, 3)
+
+                cv2.namedWindow("Video Stream")
+                cv2.imshow('frame',frame)
+                cv2.waitKey(1)               
     
     def run(self):
         try:
