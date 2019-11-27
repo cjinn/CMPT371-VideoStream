@@ -58,7 +58,7 @@ class UDPPacketHandler:
             return b''.join(self.packets)
 
     # Break up an object into a list of packets
-    def breakupPayload(self, msgIndex: int, payload: bytes, maxPacketSize: int):
+    def breakupPayload(msgIndex: int, payload: bytes, maxPacketSize: int):
         payloadChunkSize = maxPacketSize - UDPPacket.headerSize
         numPackets = math.ceil(len(payload)/payloadChunkSize)
         packets = []
@@ -76,3 +76,42 @@ class UDPPacketHandler:
         packets.append(UDPPacket(msgIndex, numPackets - 1, numPackets, payloadView[startByte:]))
 
         return packets
+
+if __name__ == '__main__':
+    import numpy as np
+    import random
+    import cv2
+
+    def cv2_decode_image_buffer(img_buffer):
+        img_array = np.frombuffer(img_buffer, dtype=np.dtype('uint8'))
+        # Decode a colored image
+        return  cv2.imdecode(img_array, flags=cv2.IMREAD_UNCHANGED)
+
+    def cv2_encode_image(cv2_img, jpeg_quality):
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
+        result, buf = cv2.imencode('.jpg', cv2_img, encode_params)
+        return buf.tobytes()
+
+    teapotImg = cv2.imread('teapot.jpg')
+
+    # Build up a collection of messages
+    packets = []
+    img0 = cv2_encode_image(teapotImg, 10)
+    img1 = cv2_encode_image(teapotImg, 100)
+
+    packets += UDPPacketHandler.breakupPayload(msgIndex=0, payload=img0, maxPacketSize=100)
+    packets += UDPPacketHandler.breakupPayload(msgIndex=1, payload=img1, maxPacketSize=60000)
+
+    # Shuffle the packets to see if we can handle disordered packets
+    random.shuffle(packets)
+
+    print("A total of {} packets are considered sequentially".format(len(packets)))
+
+    packet_processor = UDPPacketHandler()
+    for p in packets:
+        data = packet_processor.reassemblePackets(p)
+        if data is not None:
+            print("Got a frame !")
+            img = cv2_decode_image_buffer(data)
+            cv2.imshow('Image', img)
+            cv2.waitKey()
