@@ -33,12 +33,12 @@ class VideoClient():
 
         if socketType == SOCKET_TYPE_TCP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-            print("Opening port " + str(port))
+            print("[Client]: Opening port " + str(port))
             self.clientSocket.connect((host, port))
         elif socketType == SOCKET_TYPE_UDP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 
-        print("Starting up camera")
+        print("[Client]: Starting up camera")
         self.capture = cv2.VideoCapture(videoPath)
         time.sleep(2) # Warm up the camera
 
@@ -62,7 +62,7 @@ class VideoClient():
                     t1 = time.time()
                     frameRate = str(30/(t1 - t0))
                     t0 = t1
-                    print("Stream FPS: " + frameRate)
+                    print("[Client]: Stream FPS: " + frameRate)
         except KeyboardInterrupt:
             self.close()
         finally:
@@ -88,13 +88,13 @@ class VideoClient():
                     t1 = time.time()
                     frameRate = str(30/(t1 - t0))
                     t0 = t1
-                    print("Stream FPS: " + frameRate)
+                    print("[Client]: Stream FPS: " + frameRate)
         except KeyboardInterrupt:
             self.close()
         finally:
             self.close()
 
-    def beginStreaming(self):
+    def run(self):
         self.running = True
         
         # Begin grabbing frames in a different thread
@@ -104,10 +104,10 @@ class VideoClient():
         time.sleep(1)
 
         if self.socketType == SOCKET_TYPE_TCP:
-            print("Beginning streaming TCP")
+            print("[Client]: Beginning streaming TCP")
             self.streamTCP()
         elif self.socketType == SOCKET_TYPE_UDP:
-            print("Beginning streaming UDP")
+            print("[Client]: Beginning streaming UDP")
             self.streamUDP()
     
     def close(self):
@@ -143,12 +143,16 @@ class VideoServer():
 
     def runTCP(self):
         self.serverSocket.listen(MAX_NUM_CLIENTS)
-        print("Video socket ready to listen")
+        print("[Server]: Video socket ready to listen")
 
         connection, address = self.serverSocket.accept()
-        print("Accepted a client!")
+        print("[Server]: Accepted a client!")
         data = b''
         payloadSize = struct.calcsize("L")
+
+        frameIndex = 0
+        t1 = time.time()
+        t0 = t1
 
         while self.running:
             while len(data) < payloadSize:
@@ -166,12 +170,23 @@ class VideoServer():
             frame = pickle.loads(frameData)
             cv2.imshow('frame',frame)
             cv2.waitKey(1)
+            frameIndex += 1
+
+            if frameIndex % 30 == 0:
+                t1 = time.time()
+                frameRate = str(30/(t1 - t0))
+                t0 = t1
+                print("[Server]: Stream FPS: " + frameRate)
 
 
     def runUDP(self):
         data = b''
         serverSock = self.serverSocket
         time.sleep(2)
+
+        frameIndex = 0
+        t1 = time.time()
+        t0 = 0
 
         while self.running:
             # Grab as much data from buffer
@@ -186,16 +201,23 @@ class VideoServer():
             if frameBytes != None:
                 frame = self.decodeFrame(frameBytes)
                 cv2.imshow('frame',frame)
-                cv2.waitKey(1)               
+                cv2.waitKey(1)
+                frameIndex += 1
+
+                if frameIndex % 30 == 0:
+                    t1 = time.time()
+                    frameRate = str(30/(t1 - t0))
+                    t0 = t1
+                    print("[Server]: Stream FPS: " + frameRate)
     
     def run(self):
         try:
             self.running = True
             if self.socketType == SOCKET_TYPE_TCP:
-                print("Running TCP server")
+                print("[Server]: Running TCP server")
                 self.runTCP()
             elif self.socketType == SOCKET_TYPE_UDP:
-                print("Running UDP server")
+                print("[Server]: Running UDP server")
                 self.runUDP()
         except KeyboardInterrupt:
             self.close()
@@ -211,5 +233,22 @@ class VideoServer():
         self.running = False
 
 if __name__ == '__main__':
-    videoServer = VideoServer(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
-    videoServer.run()
+    # Set up server
+    server = VideoServer(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
+    serverThread = threading.Thread(target=server.run)
+    serverThread.setDaemon(True)
+
+    # Set up client
+    client = VideoClient(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
+    clientThread = threading.Thread(target=client.run)
+    clientThread.setDaemon(True)
+
+    # Begin running until keyboard interrupt
+    serverThread.start()
+    clientThread.start()
+
+    try:
+        while True:
+            time.sleep(1)
+    finally:
+        print("End program")
