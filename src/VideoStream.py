@@ -98,8 +98,9 @@ class VideoClient():
         self.running = True
         
         # Begin grabbing frames in a different thread
-        self.grabFrameThread = threading.Thread(target=self.grabFrame)
-        self.grabFrameThread.start()
+        grabFrameThread = threading.Thread(target=self.grabFrame)
+        grabFrameThread.setDaemon(True)
+        grabFrameThread.start()
         time.sleep(1)
 
         if self.socketType == SOCKET_TYPE_TCP:
@@ -112,7 +113,6 @@ class VideoClient():
     def close(self):
         self.running = False
         self.capture.release()
-        self.grabFrameThread.join()
 
     def grabFrame(self):
         while self.running:
