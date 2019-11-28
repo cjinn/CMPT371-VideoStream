@@ -1,7 +1,7 @@
 import math
 
 # Constants
-MAX_PACKET_SIZE = 100
+MAX_PACKET_SIZE = 200
 
 # UDP Packet object to assist multi-datagrams
 class UDPPacket:
