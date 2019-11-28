@@ -16,7 +16,7 @@ STREAM_CAMERA = 0
 SOCKET_TYPE_TCP="TCP"
 SOCKET_TYPE_UDP="UDP"
 MAX_NUM_CLIENTS = 1 # only one client
-MESSAGE_BUFFER_SIZE = 20000 # Massive buffer to store image frames
+DEFAULT_MESSAGE_BUFFER_SIZE = 10000 # Optimal buffer size to store image frames for both UDP and TCP
 
 # Variables
 lock = threading.Lock() # lock for frames
@@ -29,7 +29,7 @@ class VideoClient():
         self.host = host
         self.port = port
         self.frames = []
-        self.running = True
+        self.running = False
 
         if socketType == SOCKET_TYPE_TCP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -51,16 +51,16 @@ class VideoClient():
 
         try:
             while self.running:
-                with lock:
-                    if len(self.frames) <= 0:
-                        print(["[Client]: Starved of frames!"])
-                        print(["[Client]: Going to sleep to wait for frames"])
-                        time.sleep(waitTimer)
-                        waitTimer += 1
-                        continue
-                    else:
-                        waitTimer = 1
+                if len(self.frames) <= 0:
+                    print(["[Client]: Starved of frames!"])
+                    print(["[Client]: Sleep for " + str(waitTimer) + " second"])
+                    time.sleep(waitTimer)
+                    waitTimer += 1
+                    continue
+                else:
+                    with lock:
                         encodedFrame = self.frames.pop(0)
+                    waitTimer = 1
                 packets = handler.breakupPayload(msgIndex=frameIndex, payload=encodedFrame, maxPacketSize=udp.MAX_PACKET_SIZE)
 
                 for packet in packets:
@@ -85,16 +85,16 @@ class VideoClient():
 
         try:
             while self.running:
-                with lock:
-                    if len(self.frames) <= 0:
-                        print(["[Client]: Starved of frames!"])
-                        print(["[Client]: Going to sleep to wait for frames"])
-                        time.sleep(waitTimer)
-                        waitTimer += 1
-                        continue
-                    else:
-                        waitTimer = 1
+                if len(self.frames) <= 0:
+                    print(["[Client]: Starved of frames!"])
+                    print(["[Client]: Sleep for " + str(waitTimer) + " second"])
+                    time.sleep(waitTimer)
+                    waitTimer += 1
+                    continue
+                else:
+                    with lock:
                         frame = self.frames.pop(0)
+                    waitTimer = 1
 
                 # Serialise frame before sending. Not intended for production
                 data = pickle.dumps(frame) 
@@ -157,11 +157,12 @@ class VideoClient():
         return buf.tobytes()
 
 class VideoServer():
-    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP):
+    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP, msgBufferSize=DEFAULT_MESSAGE_BUFFER_SIZE):
         # Initialisation
         self.socketType = socketType
         self.host = host
         self.port = port
+        self.msgBufferSize = msgBufferSize
         self.running = False
 
         if socketType == SOCKET_TYPE_TCP:
@@ -186,14 +187,14 @@ class VideoServer():
 
         while self.running:
             while len(data) < payloadSize:
-                data += connection.recv(MESSAGE_BUFFER_SIZE)
+                data += connection.recv(self.msgBufferSize)
             packedMsgSize = data[:payloadSize]
             data = data[payloadSize:]
             msgSize = struct.unpack("L", packedMsgSize)[0]
 
             # Retrieve data based on message size
             while len(data) < msgSize:
-                data += connection.recv(MESSAGE_BUFFER_SIZE)
+                data += connection.recv(self.msgBufferSize)
             frameData = data[:msgSize]
             data = data[msgSize:]
 
@@ -219,7 +220,7 @@ class VideoServer():
 
         while self.running:
             # Grab as much data from buffer
-            data += serverSock.recv(MESSAGE_BUFFER_SIZE)
+            data += serverSock.recv(self.msgBufferSize)
             packet = udp.UDPPacket.decode(data)
             packetSize = packet.headerSize + len(packet.payload)
             data = data[packetSize:]
@@ -268,7 +269,7 @@ if __name__ == '__main__':
     socketType = SOCKET_TYPE_UDP
 
     # Set up and run server
-    server = VideoServer('', port, socketType)
+    server = VideoServer(host, port, socketType)
     serverThread = threading.Thread(target=server.run)
     serverThread.setDaemon(True)
     serverThread.start()
