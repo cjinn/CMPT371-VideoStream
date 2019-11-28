@@ -28,7 +28,7 @@ class VideoClient():
         self.socketType = socketType
         self.host = host
         self.port = port
-        self.encodedFrames = []
+        self.frames = []
         self.running = True
 
         if socketType == SOCKET_TYPE_TCP:
@@ -47,11 +47,20 @@ class VideoClient():
         t1 = time.time()
         t0 = t1
         handler = udp.UDPPacketHandler
+        waitTimer = 1
 
         try:
             while self.running:
                 with lock:
-                    encodedFrame = self.encodedFrames.pop(0)
+                    if len(self.frames) <= 0:
+                        print(["[Client]: Starved of frames!"])
+                        print(["[Client]: Going to sleep to wait for frames"])
+                        time.sleep(waitTimer)
+                        waitTimer += 1
+                        continue
+                    else:
+                        waitTimer = 1
+                        encodedFrame = self.frames.pop(0)
                 packets = handler.breakupPayload(msgIndex=frameIndex, payload=encodedFrame, maxPacketSize=udp.MAX_PACKET_SIZE)
 
                 for packet in packets:
@@ -72,14 +81,23 @@ class VideoClient():
         frameIndex = 0
         t1 = time.time()
         t0 = t1
+        waitTimer = 1
 
         try:
             while self.running:
                 with lock:
-                    encodedFrame = self.encodedFrames.pop(0)
+                    if len(self.frames) <= 0:
+                        print(["[Client]: Starved of frames!"])
+                        print(["[Client]: Going to sleep to wait for frames"])
+                        time.sleep(waitTimer)
+                        waitTimer += 1
+                        continue
+                    else:
+                        waitTimer = 1
+                        frame = self.frames.pop(0)
 
                 # Serialise frame before sending. Not intended for production
-                data = pickle.dumps(encodedFrame) 
+                data = pickle.dumps(frame) 
                 msgSize = struct.pack("L", len(data))
                 self.clientSocket.sendall(msgSize + data)
                 frameIndex += 1
@@ -96,30 +114,42 @@ class VideoClient():
 
     def run(self):
         self.running = True
-        
-        # Begin grabbing frames in a different thread
-        grabFrameThread = threading.Thread(target=self.grabFrame)
-        grabFrameThread.setDaemon(True)
-        grabFrameThread.start()
-        time.sleep(1)
-
         if self.socketType == SOCKET_TYPE_TCP:
+            # Begin grabbing frames in a different thread
+            grabFrameThread = threading.Thread(target=self.grabFrame)
+            grabFrameThread.setDaemon(True)
+            grabFrameThread.start()
+            time.sleep(2) # Grab some frames before we begin streaming
+
             print("[Client]: Beginning streaming TCP")
             self.streamTCP()
         elif self.socketType == SOCKET_TYPE_UDP:
+            # Begin grabbing frames in a different thread
+            grabFrameThread = threading.Thread(target=self.grabEncodedFrame)
+            grabFrameThread.setDaemon(True)
+            grabFrameThread.start()
+            time.sleep(2) # Grab some frames before we begin streaming
+        
             print("[Client]: Beginning streaming UDP")
             self.streamUDP()
     
     def close(self):
+        print("[Client]: Closing")
         self.running = False
         self.capture.release()
 
     def grabFrame(self):
         while self.running:
             ret, frame = self.capture.read()
+            with lock:
+                self.frames.append(frame)
+
+    def grabEncodedFrame(self):
+        while self.running:
+            ret, frame = self.capture.read()
             encodedFrame = self.encodeFrame(frame)
             with lock:
-                self.encodedFrames.append(encodedFrame)
+                self.frames.append(encodedFrame)
 
     def encodeFrame(self, frame, jpegQuality=50):
         encodeParams = [int(cv2.IMWRITE_JPEG_QUALITY), jpegQuality]
@@ -168,7 +198,7 @@ class VideoServer():
             data = data[msgSize:]
 
             frame = pickle.loads(frameData)
-            cv2.imshow('frame',frame)
+            cv2.imshow('frame', frame)
             cv2.waitKey(1)
             frameIndex += 1
 
@@ -180,10 +210,9 @@ class VideoServer():
 
 
     def runUDP(self):
-        data = b''
         serverSock = self.serverSocket
-        time.sleep(2)
 
+        data = b''
         frameIndex = 0
         t1 = time.time()
         t0 = 0
@@ -229,26 +258,32 @@ class VideoServer():
         return cv2.imdecode(frameArray, flags=cv2.IMREAD_UNCHANGED)
     
     def close(self):
+        print("[Server]: Closing")
         self.serverSocket.close()
         self.running = False
 
 if __name__ == '__main__':
-    # Set up server
-    server = VideoServer(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
+    host = DEFAULT_HOST
+    port = DEFAULT_PORT
+    socketType = SOCKET_TYPE_UDP
+
+    # Set up and run server
+    server = VideoServer('', port, socketType)
     serverThread = threading.Thread(target=server.run)
     serverThread.setDaemon(True)
+    serverThread.start()
 
-    # Set up client
-    client = VideoClient(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
+    time.sleep(3) # Give time for the server to be up and running
+
+    # Set up and run client
+    client = VideoClient(host, port, socketType)
     clientThread = threading.Thread(target=client.run)
     clientThread.setDaemon(True)
-
-    # Begin running until keyboard interrupt
-    serverThread.start()
     clientThread.start()
 
+    # Run until end of program (i.e keyboard interrupt)
     try:
         while True:
             time.sleep(1)
     finally:
-        print("End program")
+        print("Program ended")
