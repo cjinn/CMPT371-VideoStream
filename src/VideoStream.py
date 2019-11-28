@@ -7,6 +7,7 @@ import struct
 import time
 import math
 import UDPPackets as udp
+import threading
 
 # Constants
 DEFAULT_HOST="localhost"
@@ -17,6 +18,9 @@ SOCKET_TYPE_UDP="UDP"
 MAX_NUM_CLIENTS = 1 # only one client
 MESSAGE_BUFFER_SIZE = 20000 # Massive buffer to store image frames
 
+# Variables
+lock = threading.Lock() # lock for frames
+
 # Client sending video frames to a server
 class VideoClient():
     def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP, videoPath=STREAM_CAMERA):
@@ -24,15 +28,17 @@ class VideoClient():
         self.socketType = socketType
         self.host = host
         self.port = port
+        self.frames = []
+        self.running = True
 
         if socketType == SOCKET_TYPE_TCP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-            print("Opening port " + str(port))
+            print("[Client]: Opening port " + str(port))
             self.clientSocket.connect((host, port))
         elif socketType == SOCKET_TYPE_UDP:
             self.clientSocket = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 
-        print("Starting up camera")
+        print("[Client]: Starting up camera")
         self.capture = cv2.VideoCapture(videoPath)
         time.sleep(2) # Warm up the camera
 
@@ -41,55 +47,111 @@ class VideoClient():
         t1 = time.time()
         t0 = t1
         handler = udp.UDPPacketHandler
+        waitTimer = 1
 
-        while True:
-            frame = self.grabFrame()
-            frameBytes = self.encodeFrame(frame, 80)
-            packets = handler.breakupPayload(msgIndex=frameIndex, payload=frameBytes, maxPacketSize=udp.MAX_PACKET_SIZE)
+        try:
+            while self.running:
+                with lock:
+                    if len(self.frames) <= 0:
+                        print(["[Client]: Starved of frames!"])
+                        print(["[Client]: Going to sleep to wait for frames"])
+                        time.sleep(waitTimer)
+                        waitTimer += 1
+                        continue
+                    else:
+                        waitTimer = 1
+                        encodedFrame = self.frames.pop(0)
+                packets = handler.breakupPayload(msgIndex=frameIndex, payload=encodedFrame, maxPacketSize=udp.MAX_PACKET_SIZE)
 
-            for packet in packets:
-                self.clientSocket.sendto(packet.encode(), (self.host, self.port))
-            frameIndex += 1
+                for packet in packets:
+                    self.clientSocket.sendto(packet.encode(), (self.host, self.port))
+                frameIndex += 1
 
-            if frameIndex % 30 == 0:
-                t1 = time.time()
-                frameRate = str(30/(t1 - t0))
-                t0 = t1
-                print("Stream FPS: " + frameRate)
+                if frameIndex % 30 == 0:
+                    t1 = time.time()
+                    frameRate = str(30/(t1 - t0))
+                    t0 = t1
+                    print("[Client]: Stream FPS: " + frameRate)
+        except KeyboardInterrupt:
+            self.close()
+        finally:
+            self.close()
 
     def streamTCP(self):
         frameIndex = 0
         t1 = time.time()
         t0 = t1
+        waitTimer = 1
 
-        while True:
-            frame = self.grabFrame()
+        try:
+            while self.running:
+                with lock:
+                    if len(self.frames) <= 0:
+                        print(["[Client]: Starved of frames!"])
+                        print(["[Client]: Going to sleep to wait for frames"])
+                        time.sleep(waitTimer)
+                        waitTimer += 1
+                        continue
+                    else:
+                        waitTimer = 1
+                        frame = self.frames.pop(0)
 
-            # Serialise frame before sending. Not intended for production
-            data = pickle.dumps(frame) 
-            msgSize = struct.pack("L", len(data))
-            self.clientSocket.sendall(msgSize + data)
-            frameIndex += 1
+                # Serialise frame before sending. Not intended for production
+                data = pickle.dumps(frame) 
+                msgSize = struct.pack("L", len(data))
+                self.clientSocket.sendall(msgSize + data)
+                frameIndex += 1
 
-            if frameIndex % 30 == 0:
-                t1 = time.time()
-                frameRate = str(30/(t1 - t0))
-                t0 = t1
-                print("Stream FPS: " + frameRate)                
+                if frameIndex % 30 == 0:
+                    t1 = time.time()
+                    frameRate = str(30/(t1 - t0))
+                    t0 = t1
+                    print("[Client]: Stream FPS: " + frameRate)
+        except KeyboardInterrupt:
+            self.close()
+        finally:
+            self.close()
 
-    def beginStreaming(self):
+    def run(self):
+        self.running = True
         if self.socketType == SOCKET_TYPE_TCP:
-            print("Beginning streaming TCP")
+            # Begin grabbing frames in a different thread
+            grabFrameThread = threading.Thread(target=self.grabFrame)
+            grabFrameThread.setDaemon(True)
+            grabFrameThread.start()
+            time.sleep(2) # Grab some frames before we begin streaming
+
+            print("[Client]: Beginning streaming TCP")
             self.streamTCP()
         elif self.socketType == SOCKET_TYPE_UDP:
-            print("Beginning streaming UDP")
+            # Begin grabbing frames in a different thread
+            grabFrameThread = threading.Thread(target=self.grabEncodedFrame)
+            grabFrameThread.setDaemon(True)
+            grabFrameThread.start()
+            time.sleep(2) # Grab some frames before we begin streaming
+        
+            print("[Client]: Beginning streaming UDP")
             self.streamUDP()
+    
+    def close(self):
+        print("[Client]: Closing")
+        self.running = False
+        self.capture.release()
 
     def grabFrame(self):
-        ret, frame = self.capture.read()
-        return frame
+        while self.running:
+            ret, frame = self.capture.read()
+            with lock:
+                self.frames.append(frame)
 
-    def encodeFrame(self, frame, jpegQuality):
+    def grabEncodedFrame(self):
+        while self.running:
+            ret, frame = self.capture.read()
+            encodedFrame = self.encodeFrame(frame)
+            with lock:
+                self.frames.append(encodedFrame)
+
+    def encodeFrame(self, frame, jpegQuality=50):
         encodeParams = [int(cv2.IMWRITE_JPEG_QUALITY), jpegQuality]
         result, buf = cv2.imencode('.jpg', frame, encodeParams)
         return buf.tobytes()
@@ -100,6 +162,7 @@ class VideoServer():
         self.socketType = socketType
         self.host = host
         self.port = port
+        self.running = False
 
         if socketType == SOCKET_TYPE_TCP:
             self.serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -110,14 +173,18 @@ class VideoServer():
 
     def runTCP(self):
         self.serverSocket.listen(MAX_NUM_CLIENTS)
-        print("Video socket ready to listen")
+        print("[Server]: Video socket ready to listen")
 
         connection, address = self.serverSocket.accept()
-        print("Accepted a client!")
+        print("[Server]: Accepted a client!")
         data = b''
         payloadSize = struct.calcsize("L")
 
-        while True:
+        frameIndex = 0
+        t1 = time.time()
+        t0 = t1
+
+        while self.running:
             while len(data) < payloadSize:
                 data += connection.recv(MESSAGE_BUFFER_SIZE)
             packedMsgSize = data[:payloadSize]
@@ -131,16 +198,26 @@ class VideoServer():
             data = data[msgSize:]
 
             frame = pickle.loads(frameData)
-            cv2.imshow('frame',frame)
+            cv2.imshow('frame', frame)
             cv2.waitKey(1)
+            frameIndex += 1
+
+            if frameIndex % 30 == 0:
+                t1 = time.time()
+                frameRate = str(30/(t1 - t0))
+                t0 = t1
+                print("[Server]: Stream FPS: " + frameRate)
 
 
     def runUDP(self):
-        data = b''
         serverSock = self.serverSocket
-        time.sleep(2)
 
-        while True:
+        data = b''
+        frameIndex = 0
+        t1 = time.time()
+        t0 = 0
+
+        while self.running:
             # Grab as much data from buffer
             data += serverSock.recv(MESSAGE_BUFFER_SIZE)
             packet = udp.UDPPacket.decode(data)
@@ -153,16 +230,26 @@ class VideoServer():
             if frameBytes != None:
                 frame = self.decodeFrame(frameBytes)
                 cv2.imshow('frame',frame)
-                cv2.waitKey(1)               
+                cv2.waitKey(1)
+                frameIndex += 1
+
+                if frameIndex % 30 == 0:
+                    t1 = time.time()
+                    frameRate = str(30/(t1 - t0))
+                    t0 = t1
+                    print("[Server]: Stream FPS: " + frameRate)
     
     def run(self):
         try:
+            self.running = True
             if self.socketType == SOCKET_TYPE_TCP:
-                print("Running TCP server")
+                print("[Server]: Running TCP server")
                 self.runTCP()
             elif self.socketType == SOCKET_TYPE_UDP:
-                print("Running UDP server")
+                print("[Server]: Running UDP server")
                 self.runUDP()
+        except KeyboardInterrupt:
+            self.close()
         finally:
             self.close()
     
@@ -171,8 +258,32 @@ class VideoServer():
         return cv2.imdecode(frameArray, flags=cv2.IMREAD_UNCHANGED)
     
     def close(self):
+        print("[Server]: Closing")
         self.serverSocket.close()
+        self.running = False
 
 if __name__ == '__main__':
-    videoServer = VideoServer(DEFAULT_HOST, DEFAULT_PORT, SOCKET_TYPE_UDP)
-    videoServer.run()
+    host = DEFAULT_HOST
+    port = DEFAULT_PORT
+    socketType = SOCKET_TYPE_UDP
+
+    # Set up and run server
+    server = VideoServer('', port, socketType)
+    serverThread = threading.Thread(target=server.run)
+    serverThread.setDaemon(True)
+    serverThread.start()
+
+    time.sleep(3) # Give time for the server to be up and running
+
+    # Set up and run client
+    client = VideoClient(host, port, socketType)
+    clientThread = threading.Thread(target=client.run)
+    clientThread.setDaemon(True)
+    clientThread.start()
+
+    # Run until end of program (i.e keyboard interrupt)
+    try:
+        while True:
+            time.sleep(1)
+    finally:
+        print("Program ended")
