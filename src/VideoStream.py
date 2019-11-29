@@ -79,6 +79,7 @@ class VideoClient():
         finally:
             self.close()
 
+    # Source: https://stackoverflow.com/a/55432139
     def streamTCP(self):
         frameIndex = 0
         t1 = time.time()
@@ -176,6 +177,7 @@ class VideoServer():
             self.UDPHandler = udp.UDPPacketHandler()
         self.serverSocket.bind((host, port))
 
+    # Source: https://stackoverflow.com/a/55432139
     def runTCP(self):
         self.serverSocket.listen(MAX_NUM_CLIENTS)
         print("[Server]: Video socket ready to listen")
@@ -205,6 +207,10 @@ class VideoServer():
 
             with serverLock:
                 self.frames.append(frame)
+                # Drop old frames to not fill up the buffer
+                if len(self.frames) > 180:
+                    self.frames.pop(0)
+            
             cv2.imshow('frame', frame)
             cv2.waitKey(1)
             frameIndex += 1
@@ -214,7 +220,6 @@ class VideoServer():
                 frameRate = str(30/(t1 - t0))
                 t0 = t1
                 print("[Server]: Stream FPS: " + frameRate)
-
 
     def runUDP(self):
         serverSock = self.serverSocket
@@ -238,6 +243,10 @@ class VideoServer():
                 frame = self.decodeFrame(frameBytes)
                 with serverLock:
                     self.frames.append(frame)
+                    # Drop old frames to not fill up the buffer
+                    if len(self.frames) > 180:
+                        self.frames.pop(0)
+                
                 cv2.imshow('frame',frame)
                 cv2.waitKey(1)
                 frameIndex += 1

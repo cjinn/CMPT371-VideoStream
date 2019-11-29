@@ -1,9 +1,11 @@
+# Source: https://www.pyimagesearch.com/2019/09/02/opencv-stream-video-to-web-browser-html-page/
 from flask import Response
 from flask import Flask
 from flask import render_template
 import threading
 import cv2
 import VideoStream as vs
+import time
 
 # Constants
 DEFAULT_HOST = "localhost"
@@ -31,7 +33,7 @@ def generateVideoFrames():
         if result == False:
             continue
         
-        # encode the frame in JPEG format
+        # Encode the frame in JPEG format
         (flag, encodedImage) = cv2.imencode(".jpg", outputFrame)
 
         if not flag:
@@ -42,12 +44,10 @@ def generateVideoFrames():
 
 @app.route("/video_feed")
 def video_feed():
-	# return the response generated along with the specific media
-	# type (mime type)
+	# Return the response generated along with the specific media type (mime type)
 	return Response(generateVideoFrames(),
 		mimetype = "multipart/x-mixed-replace; boundary=frame")
 
-# check to see if this is the main thread of execution
 if __name__ == '__main__':
     # Running app
     app.run(DEFAULT_HOST, DEFAULT_PORT, debug=True, threaded=True, use_reloader=False)
