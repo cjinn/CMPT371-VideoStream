@@ -19,12 +19,14 @@ MAX_NUM_CLIENTS = 1 # only one client
 DEFAULT_MESSAGE_BUFFER_SIZE = 10000 # Optimal buffer size to store image frames for both UDP and TCP
 
 # Variables
-lock = threading.Lock() # lock for frames
+clientLock = threading.Lock() # lock for client
+serverLock = threading.Lock() # lock for server
 
 # Client sending video frames to a server
 class VideoClient():
-    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP, videoPath=STREAM_CAMERA):
+    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_UDP, videoPath=STREAM_CAMERA):
         # Initialisation
+        print("[Client]: Initialising Video Client")
         self.socketType = socketType
         self.host = host
         self.port = port
@@ -58,7 +60,7 @@ class VideoClient():
                     waitTimer += 1
                     continue
                 else:
-                    with lock:
+                    with clientLock:
                         encodedFrame = self.frames.pop(0)
                     waitTimer = 1
                 packets = handler.breakupPayload(msgIndex=frameIndex, payload=encodedFrame, maxPacketSize=udp.MAX_PACKET_SIZE)
@@ -92,7 +94,7 @@ class VideoClient():
                     waitTimer += 1
                     continue
                 else:
-                    with lock:
+                    with clientLock:
                         frame = self.frames.pop(0)
                     waitTimer = 1
 
@@ -141,14 +143,14 @@ class VideoClient():
     def grabFrame(self):
         while self.running:
             ret, frame = self.capture.read()
-            with lock:
+            with clientLock:
                 self.frames.append(frame)
 
     def grabEncodedFrame(self):
         while self.running:
             ret, frame = self.capture.read()
             encodedFrame = self.encodeFrame(frame)
-            with lock:
+            with clientLock:
                 self.frames.append(encodedFrame)
 
     def encodeFrame(self, frame, jpegQuality=50):
@@ -157,13 +159,15 @@ class VideoClient():
         return buf.tobytes()
 
 class VideoServer():
-    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_TCP, msgBufferSize=DEFAULT_MESSAGE_BUFFER_SIZE):
+    def __init__(self, host=DEFAULT_HOST, port=DEFAULT_PORT, socketType=SOCKET_TYPE_UDP, msgBufferSize=DEFAULT_MESSAGE_BUFFER_SIZE):
         # Initialisation
+        print("[Server]: Initialising Video Server")
         self.socketType = socketType
         self.host = host
         self.port = port
         self.msgBufferSize = msgBufferSize
         self.running = False
+        self.frames = []
 
         if socketType == SOCKET_TYPE_TCP:
             self.serverSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -197,8 +201,10 @@ class VideoServer():
                 data += connection.recv(self.msgBufferSize)
             frameData = data[:msgSize]
             data = data[msgSize:]
-
             frame = pickle.loads(frameData)
+
+            with serverLock:
+                self.frames.append(frame)
             cv2.imshow('frame', frame)
             cv2.waitKey(1)
             frameIndex += 1
@@ -230,6 +236,8 @@ class VideoServer():
 
             if frameBytes != None:
                 frame = self.decodeFrame(frameBytes)
+                with serverLock:
+                    self.frames.append(frame)
                 cv2.imshow('frame',frame)
                 cv2.waitKey(1)
                 frameIndex += 1
@@ -257,6 +265,15 @@ class VideoServer():
     def decodeFrame(self, frameBuffer):
         frameArray = np.frombuffer(frameBuffer, dtype=np.dtype('uint8'))
         return cv2.imdecode(frameArray, flags=cv2.IMREAD_UNCHANGED)
+
+    def exportFrame(self):
+        result = False
+        outputFrame = None
+        if len(self.frames) > 0:
+            with serverLock:
+                outputFrame = self.frames.pop(0)
+                result = True
+        return (result, outputFrame)
     
     def close(self):
         print("[Server]: Closing")
