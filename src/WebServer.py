@@ -30,7 +30,7 @@ def generateVideoFrames():
         result, outputFrame = server.exportFrame()
 
         # Check if there is an output frame
-        if result == False:
+        if result is False:
             continue
         
         # Encode the frame in JPEG format

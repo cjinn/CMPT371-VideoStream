@@ -278,7 +278,7 @@ class VideoServer():
     def exportFrame(self):
         result = False
         outputFrame = None
-        if len(self.frames) > 0:
+        if self.frames:
             with serverLock:
                 outputFrame = self.frames.pop(0)
                 result = True
