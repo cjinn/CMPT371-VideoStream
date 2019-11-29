@@ -2,14 +2,12 @@ from flask import Response
 from flask import Flask
 from flask import render_template
 import threading
-import datetime
-import time
 import cv2
 import VideoStream as vs
 
 # Constants
 DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 8080
+DEFAULT_PORT = 6175
 
 # Variables
 lock = threading.Lock()
@@ -44,7 +42,10 @@ def generateVideoFrames():
 
 @app.route("/video_feed")
 def video_feed():
-    return Response(generateVideoFrames(), mimeType="multipart/x-mixed-replace; boundary=frame")
+	# return the response generated along with the specific media
+	# type (mime type)
+	return Response(generateVideoFrames(),
+		mimetype = "multipart/x-mixed-replace; boundary=frame")
 
 # check to see if this is the main thread of execution
 if __name__ == '__main__':
